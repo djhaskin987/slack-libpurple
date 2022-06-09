@@ -16,10 +16,16 @@ gchar *slack_html_to_message(SlackAccount *sa, const char *s, PurpleMessageFlags
 	if (flags & PURPLE_MESSAGE_RAW)
 		return g_strdup(s);
 
+	gboolean in_code_block = FALSE;
 	GString *msg = g_string_sized_new(strlen(s));
 	while (*s) {
 		const char *ent;
 		int len;
+        if (in_code_block && *s == '\n') {
+            g_string_append_c(msg, '\n');
+            s++;
+            continue;
+        }
 		if ((*s == '@' || *s == '#') && !(flags & PURPLE_MESSAGE_NO_LINKIFY)) {
 			const char *e = s+1;
 			/* try to find the end of this command, but not very well -- not sure what characters are valid and eventually will need to deal with spaces */
@@ -67,12 +73,86 @@ gchar *slack_html_to_message(SlackAccount *sa, const char *s, PurpleMessageFlags
 			s += 4;
 			continue;
 		}
+        if (!g_ascii_strncasecmp(s,"<code>", 6) &&
+            strstr(s+6, "</code>")) {
+            s += 6;
+            g_string_append(msg, "`");
+            continue;
+        }
+        if (!g_ascii_strncasecmp(s,"</code>", 7)) {
+            s += 7;
+            g_string_append(msg, "`");
+            continue;
+        }
+        if (!g_ascii_strncasecmp(s,"<pre>", 5) &&
+                strstr(s+5,"</pre>")) {
+            s += 5;
+            g_string_append(msg, "```");
+            in_code_block = TRUE;
+            continue;
+        }
+        if (!g_ascii_strncasecmp(s,"</pre>", 6)) {
+            s += 6;
+            in_code_block = FALSE;
+            g_string_append(msg, "```");
+            continue;
+        }
+
 		/* what about other tags? urls (auto-detected server-side)? dates? */
 		g_string_append_c(msg, *s++);
 	}
 
 	return g_string_free(msg, FALSE);
 }
+
+void slack_code_to_html(GString *html, gchar **pos, gchar *end) {
+    if ((end-*pos) <= 0) {
+        // Erroneous call
+        purple_debug_warning("slack", "Erroneous call to slack_code_to_html\n");
+    } else if ((end-*pos) == 1) {
+        // Just a single '`'
+        g_string_append_c(html, **pos);
+        (*pos)++;
+    } else if ((end-*pos) == 2) {
+        if (*(*pos+1) == '`') {
+            // just a double '``'
+            g_string_append(html, "<code>&nbsp;</code>");
+        } else {
+            g_string_append_c(html, **pos);
+            g_string_append_c(html, *(*pos+1));
+        }
+        *pos += 2;
+    } else if ((end-*pos) >= 6 && *(*pos + 1) == '`' && *(*pos + 2) == '`') {
+        char *endblock = strstr(*pos + 3, "```");
+        if (!endblock) {
+            // Don't parse the backticks if they aren't closed
+            g_string_append_c(html, **pos);
+            g_string_append_c(html, *(*pos+1));
+            g_string_append_c(html, *(*pos+2));
+            *pos += 3;
+        } else {
+            *endblock = 0;
+            g_string_append(html, "<pre>");
+            g_string_append(html, (*pos + 3));
+            g_string_append(html, "</pre>");
+            *pos = endblock + 3;
+        }
+    } else {
+        // Definitely not a code block then, just inline code
+		char *r = memchr((*pos+1), '`', end-(*pos+1));
+		if (!r) {
+            g_string_append_c(html, **pos);
+            (*pos)++;
+        } else {
+            *r = 0;
+            g_string_append(html, "<code>");
+            g_string_append(html, *pos+1);
+            *pos = r + 1;
+            g_string_append(html, "</code>");
+        }
+    }
+}
+
 
 void slack_message_to_html(GString *html, SlackAccount *sa, gchar *s, PurpleMessageFlags *flags, gchar *prepend_newline_str) {
 	if (!s)
@@ -85,21 +165,30 @@ void slack_message_to_html(GString *html, SlackAccount *sa, gchar *s, PurpleMess
 	char *end = &s[l];
 
 	while (s < end) {
-		char c = *s++;
+		char c = *s;
 		if (c == '\n') {
 			g_string_append(html, "<BR>");
-			
+
 			// This is here for attachments.  If this message is part of an attachment,
 			// we must add the preprend string after every newline.
 			if (prepend_newline_str) {
 				g_string_append(html, prepend_newline_str);
 			}
+            s++;
 			continue;
 		}
+
+        if (c == '`') {
+            slack_code_to_html(html, &s, end);
+            continue;
+        }
+
+        s++;
 		if (c != '<') {
 			g_string_append_c(html, c);
 			continue;
 		}
+
 
 		/* found a <tag> */
 		char *r = memchr(s, '>', end-s);
@@ -211,13 +300,13 @@ static void slack_attachment_to_html(GString *html, SlackAccount *sa, json_value
 	char *service_link = json_get_prop_strptr(attachment, "service_link");
 	char *author_name = json_get_prop_strptr(attachment, "author_name");
 	char *author_subname = json_get_prop_strptr(attachment, "author_subname");
-	
+
 	char *author_link = json_get_prop_strptr(attachment, "author_link");
 	char *text = json_get_prop_strptr(attachment, "text");
 
 	//char *fallback = json_get_prop_strptr(attachment, "fallback");
 	char *pretext = json_get_prop_strptr(attachment, "pretext");
-	
+
 	char *title = json_get_prop_strptr(attachment, "title");
 	char *title_link = json_get_prop_strptr(attachment, "title_link");
 	char *footer = json_get_prop_strptr(attachment, "footer");
@@ -343,7 +432,7 @@ static void slack_file_to_html(GString *html, SlackAccount *sa, json_value *file
 void slack_json_to_html(GString *html, SlackAccount *sa, json_value *message, PurpleMessageFlags *flags) {
 	const char *subtype = json_get_prop_strptr(message, "subtype");
 	int i;
-	
+
 	if (flags && json_get_prop_boolean(message, "hidden", FALSE))
 		*flags |= PURPLE_MESSAGE_INVISIBLE;
 
@@ -510,7 +599,7 @@ void slack_handle_message(SlackAccount *sa, SlackObject *obj, json_value *json, 
 					!strcmp(subtype, "group_topic"))
 				purple_conv_chat_set_topic(chat, user ? user->object.name : user_id, json_get_prop_strptr(json, "topic"));
 		}
-		
+
 		serv_got_chat_in(sa->gc, chan->cid, user ? user->object.name : user_id ?: username ?: "", flags, html->str, mt);
 	} else if (SLACK_IS_USER(obj)) {
 		SlackUser *im = (SlackUser*)obj;
@@ -558,7 +647,7 @@ static gboolean slack_unset_typing_cb(SlackChatBuddy *chatbuddy) {
 	if (cb) {
 		purple_conv_chat_user_set_flags(chatbuddy->chat, chatbuddy->name, cb->flags & ~PURPLE_CBFLAGS_TYPING);
 	}
-	
+
 	g_free(chatbuddy->name);
 	chatbuddy->name = NULL;
 	return FALSE;
@@ -579,7 +668,7 @@ void slack_user_typing(SlackAccount *sa, json_value *json) {
 		PurpleConvChatBuddy *cb = chat ? purple_conv_chat_cb_find(chat, user->object.name) : NULL;
 		if (cb) {
 			purple_conv_chat_user_set_flags(chat, user->object.name, cb->flags | PURPLE_CBFLAGS_TYPING);
-			
+
 			guint timeout = GPOINTER_TO_UINT(g_dataset_get_data(user, "typing_timeout"));
 			SlackChatBuddy *chatbuddy = g_dataset_get_data(user, "chatbuddy");
 			if (timeout) {
@@ -593,7 +682,7 @@ void slack_user_typing(SlackAccount *sa, json_value *json) {
 			chatbuddy->chat = chat;
 			chatbuddy->name = g_strdup(user->object.name);
 			timeout = purple_timeout_add_seconds(4, (GSourceFunc)slack_unset_typing_cb, chatbuddy);
-			
+
 			g_dataset_set_data(user, "typing_timeout", GUINT_TO_POINTER(timeout));
 			g_dataset_set_data(user, "chatbuddy", chatbuddy);
 		}
