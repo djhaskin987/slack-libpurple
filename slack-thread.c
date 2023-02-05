@@ -80,7 +80,11 @@ static void slack_format_thread_time(SlackAccount *sa, char s[128], const char *
 	size_t r = strftime(s, 128, time_fmt, &thread_time);
 	if (!r) {
 		/* fall back */
+#ifdef MSYS2
+		r = snprintf(s, 128, "%lld", tt);
+#else
 		r = snprintf(s, 128, "%ld", tt);
+#endif
 	}
 
 	if (exact)
@@ -132,15 +136,24 @@ sub:
 		while (e[i] >= '0' && e[i] <= '9')
 			i ++;
 		if (i == 6) {
+#ifdef MSYS2
+			snprintf(start, 19, "%llu.%s", t, e);
+#else
 			snprintf(start, 19, "%lu.%s", t, e);
+#endif
 			*end = 0;
 			e += i;
 		}
 	}
 	else
 	{
-		snprintf(start, 19, "%lu.000000", t);
-		snprintf(end, 19, "%lu.999999", t);
+#ifdef MSYS2
+		snprintf(start, 19, "%llu.000000", t);
+		snprintf(end, 19, "%llu.999999", t);
+#else
+		snprintf(start, 19, "%llu.000000", t);
+		snprintf(end, 19, "%llu.999999", t);
+#endif
 	}
 
 	if (*e && !isspace(*e))
