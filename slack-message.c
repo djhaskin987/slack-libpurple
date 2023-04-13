@@ -88,7 +88,7 @@ void slack_message_to_html(GString *html, SlackAccount *sa, gchar *s, PurpleMess
 		char c = *s++;
 		if (c == '\n') {
 			g_string_append(html, "<BR>");
-			
+
 			// This is here for attachments.  If this message is part of an attachment,
 			// we must add the preprend string after every newline.
 			if (prepend_newline_str) {
@@ -227,13 +227,13 @@ static void slack_attachment_to_html(GString *html, SlackAccount *sa, json_value
 	char *service_link = json_get_prop_strptr(attachment, "service_link");
 	char *author_name = json_get_prop_strptr(attachment, "author_name");
 	char *author_subname = json_get_prop_strptr(attachment, "author_subname");
-	
+
 	char *author_link = json_get_prop_strptr(attachment, "author_link");
 	char *text = json_get_prop_strptr(attachment, "text");
 
 	//char *fallback = json_get_prop_strptr(attachment, "fallback");
 	char *pretext = json_get_prop_strptr(attachment, "pretext");
-	
+
 	char *title = json_get_prop_strptr(attachment, "title");
 	char *title_link = json_get_prop_strptr(attachment, "title_link");
 	char *footer = json_get_prop_strptr(attachment, "footer");
@@ -359,7 +359,7 @@ static void slack_file_to_html(GString *html, SlackAccount *sa, json_value *file
 void slack_json_to_html(GString *html, SlackAccount *sa, json_value *message, PurpleMessageFlags *flags) {
 	const char *subtype = json_get_prop_strptr(message, "subtype");
 	int i;
-	
+
 	if (flags && json_get_prop_boolean(message, "hidden", FALSE))
 		*flags |= PURPLE_MESSAGE_INVISIBLE;
 
@@ -428,7 +428,7 @@ void slack_handle_message(SlackAccount *sa, SlackObject *obj, json_value *json, 
 		return;
 	}
 
-	json_value *message     = json;
+	json_value *message = json;
 	json_value *ts = json_get_prop(message, "ts");
 	const char *tss = json_get_strptr(ts);
 	const char *subtype = json_get_prop_strptr(message, "subtype");
@@ -529,7 +529,7 @@ void slack_handle_message(SlackAccount *sa, SlackObject *obj, json_value *json, 
 					!strcmp(subtype, "group_topic"))
 				purple_conv_chat_set_topic(chat, user ? user->object.name : user_id, json_get_prop_strptr(json, "topic"));
 		}
-		
+
 		serv_got_chat_in(sa->gc, chan->cid, user ? user->object.name : user_id ?: username ?: "", flags, html->str, mt);
 	} else if (SLACK_IS_USER(obj)) {
 		SlackUser *im = (SlackUser*)obj;
@@ -568,23 +568,29 @@ gboolean slack_message(SlackAccount *sa, json_value *json) {
 }
 
 typedef struct {
-	PurpleConvChat *chat;
+	SlackAccount *sa;
+	SlackChannel *chan;
 	gchar *name;
 } SlackChatBuddy;
 
 static gboolean slack_unset_typing_cb(SlackChatBuddy *chatbuddy) {
-	PurpleConvChatBuddy *cb = purple_conv_chat_cb_find(chatbuddy->chat, chatbuddy->name);
+	PurpleConvChat *chat = slack_channel_get_conversation(chatbuddy->sa, chatbuddy->chan);
+	PurpleConvChatBuddy *cb = chat ? purple_conv_chat_cb_find(chat, chatbuddy->name) : NULL;
 	if (cb) {
 		purple_conv_chat_user_set_flags(chatbuddy->chat, chatbuddy->name, cb->flags & ~PURPLE_CBFLAGS_TYPING);
 	}
-	
 	g_free(chatbuddy->name);
 	chatbuddy->name = NULL;
+	chatbuddy->sa = NULL;
+	chatbuddy->chan = NULL;
+	// Memory leak? We allocated this, probs should deallocate it.
+	g_free(chatbuddy);
+
 	return FALSE;
 }
 
 void slack_user_typing(SlackAccount *sa, json_value *json) {
-	const char *user_id    = json_get_prop_strptr(json, "user");
+	const char *user_id = json_get_prop_strptr(json, "user");
 	const char *channel_id = json_get_prop_strptr(json, "channel");
 
 	SlackUser *user = (SlackUser*)slack_object_hash_table_lookup(sa->users, user_id);
@@ -598,7 +604,7 @@ void slack_user_typing(SlackAccount *sa, json_value *json) {
 		PurpleConvChatBuddy *cb = chat ? purple_conv_chat_cb_find(chat, user->object.name) : NULL;
 		if (cb) {
 			purple_conv_chat_user_set_flags(chat, user->object.name, cb->flags | PURPLE_CBFLAGS_TYPING);
-			
+
 			guint timeout = GPOINTER_TO_UINT(g_dataset_get_data(user, "typing_timeout"));
 			SlackChatBuddy *chatbuddy = g_dataset_get_data(user, "chatbuddy");
 			if (timeout) {
@@ -609,10 +615,11 @@ void slack_user_typing(SlackAccount *sa, json_value *json) {
 				}
 			}
 			chatbuddy = g_new0(SlackChatBuddy, 1);
-			chatbuddy->chat = chat;
+			chatbuddy->sa = sa;
+			chatbuddy->chan = chan;
 			chatbuddy->name = g_strdup(user->object.name);
 			timeout = purple_timeout_add_seconds(4, (GSourceFunc)slack_unset_typing_cb, chatbuddy);
-			
+
 			g_dataset_set_data(user, "typing_timeout", GUINT_TO_POINTER(timeout));
 			g_dataset_set_data(user, "chatbuddy", chatbuddy);
 		}
