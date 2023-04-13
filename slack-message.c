@@ -577,14 +577,14 @@ static gboolean slack_unset_typing_cb(SlackChatBuddy *chatbuddy) {
 	PurpleConvChat *chat = slack_channel_get_conversation(chatbuddy->sa, chatbuddy->chan);
 	PurpleConvChatBuddy *cb = chat ? purple_conv_chat_cb_find(chat, chatbuddy->name) : NULL;
 	if (cb) {
-		purple_conv_chat_user_set_flags(chatbuddy->chat, chatbuddy->name, cb->flags & ~PURPLE_CBFLAGS_TYPING);
+		purple_conv_chat_user_set_flags(chat, chatbuddy->name, cb->flags & ~PURPLE_CBFLAGS_TYPING);
 	}
 	g_free(chatbuddy->name);
 	chatbuddy->name = NULL;
 	chatbuddy->sa = NULL;
 	chatbuddy->chan = NULL;
 	// Memory leak? We allocated this, probs should deallocate it.
-	g_free(chatbuddy);
+    //g_free(chatbuddy);
 
 	return FALSE;
 }
@@ -610,7 +610,7 @@ void slack_user_typing(SlackAccount *sa, json_value *json) {
 			if (timeout) {
 				purple_timeout_remove(timeout);
 				if (chatbuddy) {
-					g_free(chatbuddy->name);
+                    g_free(chatbuddy->name);
 					g_free(chatbuddy);
 				}
 			}
