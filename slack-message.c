@@ -605,9 +605,9 @@ void slack_user_typing(SlackAccount *sa, json_value *json) {
 				purple_timeout_remove(timeout);
 				if (chatbuddy) {
 					g_free(chatbuddy->name);
-                    chatbuddy->name = NULL;
-                    chatbuddy->sa = NULL;
-                    chatbuddy->chan = NULL;
+					chatbuddy->name = NULL;
+					chatbuddy->sa = NULL;
+					chatbuddy->chan = NULL;
 					g_free(chatbuddy);
 				}
 			}
