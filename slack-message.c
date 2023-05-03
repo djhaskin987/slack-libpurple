@@ -74,6 +74,17 @@ gchar *slack_html_to_message(SlackAccount *sa, const char *s, PurpleMessageFlags
 	return g_string_free(msg, FALSE);
 }
 
+#define NUM_IMAGE_ENDINGS 7
+const char *IMAGE_ENDINGS[NUM_IMAGE_ENDINGS] = {
+    ".jpg",
+    ".jpeg",
+    ".bmp",
+    ".png",
+    ".gif",
+    ".webp",
+    ".tiff"
+};
+
 void slack_message_to_html(GString *html, SlackAccount *sa, gchar *s, PurpleMessageFlags *flags, gchar *prepend_newline_str) {
 	if (!s)
 		return;
@@ -155,12 +166,26 @@ void slack_message_to_html(GString *html, SlackAccount *sa, gchar *s, PurpleMess
 				}
 				break;
 			default:
-				/* URL */
-				g_string_append(html, "<A HREF=\"");
-				g_string_append(html, s); /* XXX embedded quotes? */
-				g_string_append(html, "\">");
-				g_string_append(html, b ?: s);
-				g_string_append(html, "</A>");
+                /* URL */
+                g_string_append(html, "<A HREF=\"");
+                g_string_append(html, s); /* XXX embedded quotes? */
+                g_string_append(html, "\">");
+                int found_img = 0;
+                for (int imgi = 0; imgi < NUM_IMAGE_ENDINGS; imgi++) {
+                    char *imgending = strstr(s, IMAGE_ENDINGS[imgi]);
+                    // If the image end matches and it truly was at the end
+                    if (imgending == r - strlen(IMAGE_ENDINGS[imgi])) {
+                        g_string_append(html, "<IMG SRC=\"");
+                        g_string_append(html, s);
+                        g_string_append(html, "\">");
+                        found_img = 1;
+                        break;
+                    }
+                }
+                if (!found_img) {
+                    g_string_append(html, b ?: s);
+                }
+                g_string_append(html, "</A>");
 		}
 		s = r+1;
 	}
