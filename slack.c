@@ -519,7 +519,7 @@ static PurplePluginInfo info = {
 	PURPLE_PRIORITY_DEFAULT,
 	SLACK_PLUGIN_ID,
 	"Slack",
-	"0.2",
+	"0.2baby.",
 	"Slack protocol plugin",
 	"Slack protocol support for libpurple.",
 	"Dylan Simon <dylan@dylex.net>",

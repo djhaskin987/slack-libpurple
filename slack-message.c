@@ -75,7 +75,7 @@ gchar *slack_html_to_message(SlackAccount *sa, const char *s, PurpleMessageFlags
 }
 
 #define NUM_IMAGE_ENDINGS 7
-const char *IMAGE_ENDINGS[NUM_IMAGE_ENDINGS] = {
+const static char *IMAGE_ENDINGS[NUM_IMAGE_ENDINGS] = {
     ".jpg",
     ".jpeg",
     ".bmp",
@@ -84,6 +84,55 @@ const char *IMAGE_ENDINGS[NUM_IMAGE_ENDINGS] = {
     ".webp",
     ".tiff"
 };
+
+/*
+ * make a link if url is not NULL.  Otherwise, just give the text back.
+ */
+static void link_html(GString *html, char *url, char *text) {
+	if (!text) {
+		return;
+	} else if (url) {
+        purple_debug_info("slack", "Processing HTML links. URL: %s Text: %s\n",url, text);
+        printf("Processing HTML links. URL: %s Text: %s\n", url, text);
+        for (int i =0; i < NUM_IMAGE_ENDINGS; i++) {
+            printf("Image ending: %s\n", IMAGE_ENDINGS[i]);
+        }
+        g_string_append(html, "<a href=\"");
+        g_string_append(html, url); /* XXX embedded quotes? */
+        g_string_append(html, "\">");
+        int found_img = 0;
+        for (int imgi = 0; imgi < NUM_IMAGE_ENDINGS; imgi++) {
+            char *imgending = strstr(url, IMAGE_ENDINGS[imgi]);
+            purple_debug_info("slack", "Image ending: %s found in %s\n", imgending, IMAGE_ENDINGS[imgi]);
+            printf("Image ending: %s found in %s\n", imgending != NULL ? imgending : "null", IMAGE_ENDINGS[imgi]);
+
+            if (imgending != NULL) {
+                purple_debug_info("slack", "Found image! Maybe. URL=%s\n", url);
+
+                purple_debug_info("slack", "Found image ending %s\n", IMAGE_ENDINGS[imgi]);
+                // If the image end matches and it truly was at the end
+                if (strlen(imgending) == strlen(IMAGE_ENDINGS[imgi])) {
+                    printf("REALLY found image!\n");
+                    purple_debug_info("slack", "Ensured image ending was at end.\n");
+                    printf("<img src=\"%s\" alt=\"%s\"/>\n",
+                            url,
+                            text);
+                    g_string_printf(html,
+                            "<img src=\"%s\" alt=\"%s\"/>",
+                            url,
+                            text);
+                    found_img = 1;
+                    break;
+                }
+            }
+        }
+        if (!found_img) {
+            printf("Image not found, printing message\n");
+            g_string_append(html, text);
+        }
+        g_string_append(html, "</a>");
+    }
+}
 
 void slack_message_to_html(GString *html, SlackAccount *sa, gchar *s, PurpleMessageFlags *flags, gchar *prepend_newline_str) {
 	if (!s)
@@ -167,25 +216,7 @@ void slack_message_to_html(GString *html, SlackAccount *sa, gchar *s, PurpleMess
 				break;
 			default:
                 /* URL */
-                g_string_append(html, "<A HREF=\"");
-                g_string_append(html, s); /* XXX embedded quotes? */
-                g_string_append(html, "\">");
-                int found_img = 0;
-                for (int imgi = 0; imgi < NUM_IMAGE_ENDINGS; imgi++) {
-                    char *imgending = strstr(s, IMAGE_ENDINGS[imgi]);
-                    // If the image end matches and it truly was at the end
-                    if (imgending == r - strlen(IMAGE_ENDINGS[imgi])) {
-                        g_string_append(html, "<IMG SRC=\"");
-                        g_string_append(html, s);
-                        g_string_append(html, "\">");
-                        found_img = 1;
-                        break;
-                    }
-                }
-                if (!found_img) {
-                    g_string_append(html, b ?: s);
-                }
-                g_string_append(html, "</A>");
+                link_html(html, s, b ?: s);
 		}
 		s = r+1;
 	}
@@ -221,23 +252,6 @@ static const gchar *get_color(const char *c) {
 	}
 }
 
-/*
- * make a link if url is not NULL.  Otherwise, just give the text back.
- */
-static void link_html(GString *html, char *url, char *text) {
-	if (!text) {
-		return;
-	} else if (url) {
-		g_string_append_printf(
-			html,
-			"<a href=\"%s\">%s</a>",
-			url,
-			text
-		);
-	} else {
-		g_string_append(html, text);
-	}
-}
 
 /*
  * Converts a single attachment to HTML.  The shape of an attachment is
@@ -374,11 +388,9 @@ static void slack_file_to_html(GString *html, SlackAccount *sa, json_value *file
 	char *url = json_get_prop_strptr(file, "url_private");
 	if (!url)
 		url = json_get_prop_strptr(file, "permalink");
-
-	g_string_append_printf(html, "<br/>%s<a href=\"%s\">%s</a>",
-		purple_account_get_string(sa->account, "attachment_prefix", "▎ "),
-		url ?: "",
-		title ?: "file");
+    g_string_append_printf(html, "<br/>%s",
+		purple_account_get_string(sa->account, "attachment_prefix", "▎ "));
+    link_html(html, url ?: "", title ?: "file");
 }
 
 void slack_json_to_html(GString *html, SlackAccount *sa, json_value *message, PurpleMessageFlags *flags) {
