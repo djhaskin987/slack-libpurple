@@ -23,11 +23,11 @@ PURPLE_MOD=purple
 ifeq ($(OS),Windows_NT)
 
 LIBNAME=libslack.dll
-PIDGIN_TREE_TOP ?= ../pidgin-2.10.11
+PIDGIN_TREE_TOP ?= ../pidgin-2.14.12
 WIN32_DEV_TOP ?= $(PIDGIN_TREE_TOP)/../win32-dev
 WIN32_CC ?= $(WIN32_DEV_TOP)/mingw-4.7.2/bin/gcc
 
-PROGFILES32=${ProgramFiles(x86)}
+PROGFILES32="C:/PROGRA~2"
 ifndef PROGFILES32
 PROGFILES32=$(PROGRAMFILES)
 endif
@@ -44,8 +44,8 @@ CFLAGS = \
     -D_XOPEN_SOURCE=1 \
     -std=c99 \
 	-I$(PIDGIN_TREE_TOP)/libpurple \
-	-I$(WIN32_DEV_TOP)/glib-2.28.8/include -I$(WIN32_DEV_TOP)/glib-2.28.8/include/glib-2.0 -I$(WIN32_DEV_TOP)/glib-2.28.8/lib/glib-2.0/include
-LIBS = -L$(WIN32_DEV_TOP)/glib-2.28.8/lib -L$(PIDGIN_TREE_TOP)/libpurple -lpurple -lintl -lglib-2.0 -lgobject-2.0 -g -ggdb -static-libgcc -lz -lws2_32 
+	-I$(WIN32_DEV_TOP)/glib-2.28.8/include 	-I$(WIN32_DEV_TOP)/gtk_2_0-2.14/include -I$(WIN32_DEV_TOP)/glib-2.28.8/include/glib-2.0 -I$(WIN32_DEV_TOP)/glib-2.28.8/lib/glib-2.0/include
+LIBS = -L$(WIN32_DEV_TOP)/glib-2.28.8/lib -L$(WIN32_DEV_TOP)/gtk_2_0-2.14/lib -L$(PIDGIN_TREE_TOP)/libpurple -lpurple -lintl -lglib-2.0 -lgobject-2.0 -g -ggdb -static-libgcc -lz -lws2_32 
 
 else
 
