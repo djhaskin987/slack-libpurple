@@ -21,6 +21,7 @@ struct _SlackAPICall {
 	PurpleUtilFetchUrlData *fetch;
 	guint timeout;
 	SlackAPICallback *callback;
+	SlackAPIRawCallback *raw_callback;
 	gpointer data;
 };
 
@@ -56,7 +57,15 @@ static void api_cb(PurpleUtilFetchUrlData *fetch, gpointer data, const gchar *bu
 		return;
 	}
 
+	if (call->raw_callback) {
+		call->raw_callback(call->sa, call->data, buff, len, NULL);
+        api_free(call);
+        api_run(sa);
+        return;
+    }
+
 	json_value *json = json_parse(buf, len);
+    
 	if (!json) {
 		api_error(call, "Invalid JSON response");
 		api_run(sa);
@@ -107,19 +116,14 @@ static void api_run(SlackAccount *sa) {
 		return;
 	api_retry(call);
 }
-
-static GString *slack_api_encode_url(SlackAccount *sa, const char *pfx, const char *endpoint, va_list qargs) {
-	GString *url = g_string_new(NULL);
-	g_string_printf(url, "%s/%s%s?token=%s", sa->api_url, pfx, endpoint, sa->token);
-
+static void slack_api_add_qargs(GString *url, qargs) {
 	const char *param;
 	while ((param = va_arg(qargs, const char*))) {
 		const char *val = va_arg(qargs, const char*);
 		g_string_append_printf(url, "&%s=%s", param, purple_url_encode(val));
 	}
-
-	return url;
 }
+
 
 static char *slack_api_encode_post_request(SlackAccount *sa, const char *url, va_list qargs) {
 	GString *request;
@@ -160,10 +164,11 @@ Content-Length: %" G_GSIZE_FORMAT "\r\n\
 	return g_string_free(request, FALSE);
 }
 
-static void slack_api_call_url(SlackAccount *sa, SlackAPICallback callback, gpointer user_data, const char *url, const char *request) {
+static void slack_api_call_url(SlackAccount *sa, SlackAPICallback callback, SlackAPIRawCallback raw_callback, gpointer user_data, const char *url, const char *request) {
 	SlackAPICall *call = g_new0(SlackAPICall, 1);
 	call->sa = sa;
 	call->callback = callback;
+	call->raw_callback = raw_callback;
 	call->url = g_strdup(url);
 	call->request = g_strdup(request);
 	call->data = user_data;
@@ -174,14 +179,30 @@ static void slack_api_call_url(SlackAccount *sa, SlackAPICallback callback, gpoi
 		api_retry(call);
 }
 
-void slack_api_get(SlackAccount *sa, SlackAPICallback callback, gpointer user_data, const char *endpoint, ...)
+void slack_api_raw_get(SlackAccount *sa, SlackAPIRawCallback callback, gpointer user_data, const char *endpoint, ...)
 {
-	va_list qargs;
+	GString *url = g_string_new(NULL);
+	g_string_printf(url, "%s?token=%s", endpoint, sa->token);
+    va_list qargs;
 	va_start(qargs, endpoint);
-	GString *url = slack_api_encode_url(sa, "", endpoint, qargs);
+    slack_api_add_qargs(url, qargs);
 	va_end(qargs);
 
-	slack_api_call_url(sa, callback, user_data, url->str, NULL);
+	slack_api_call_url(sa, NULL, callback, user_data, url->str, NULL);
+
+	g_string_free(url, TRUE);
+}
+
+void slack_api_get(SlackAccount *sa, SlackAPICallback callback, gpointer user_data, const char *endpoint, ...)
+{
+	GString *url = g_string_new(NULL);
+	g_string_printf(url, "%s/%s?token=%s", sa->api_url, endpoint, sa->token);
+    va_list qargs;
+	va_start(qargs, endpoint);
+    slack_api_add_qargs(url, qargs);
+    va_end(qargs);
+
+	slack_api_call_url(sa, callback, NULL, user_data, url->str, NULL);
 
 	g_string_free(url, TRUE);
 }
@@ -196,7 +217,7 @@ void slack_api_post(SlackAccount *sa, SlackAPICallback callback, gpointer user_d
 	char *request = slack_api_encode_post_request(sa, url->str, qargs);
 	va_end(qargs);
 
-	slack_api_call_url(sa, callback, user_data, url->str, request);
+	slack_api_call_url(sa, callback, NULL, user_data, url->str, request);
 
 	g_string_free(url, TRUE);
   	g_free(request);
