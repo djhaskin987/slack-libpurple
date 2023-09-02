@@ -6,6 +6,7 @@
 #include "slack-conversation.h"
 #include "slack-cmd.h"
 #include "slack-thread.h"
+#include "slack-react.h"
 
 /* really most commands are handled server-side, but OPT_PROTO_SLACK_COMMANDS_NATIVE doesn't quite work right (when the same command is registered for other things), so we defensively register a trivial handler for at least all the builtin commands.
  * copied from https://get.slack.help/hc/en-us/articles/201259356-using-slash-commands */
@@ -128,6 +129,37 @@ static PurpleCmdRet cmd_delete(PurpleConversation *conv, const gchar *cmd, gchar
 	return PURPLE_CMD_RET_OK;
 }
 
+static PurpleCmdRet cmd_react(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **error, void *data) {
+	SlackAccount *sa = get_slack_account(conv->account);
+	if (!sa)
+		return PURPLE_CMD_RET_FAILED;
+
+	SlackObject *obj = slack_conversation_get_conversation(sa, conv);
+	if (!obj) {
+		return PURPLE_CMD_RET_FAILED;
+	}
+
+	slack_react_post_to_timestamp(sa, obj, args[0]);
+
+	return PURPLE_CMD_RET_OK;
+}
+
+static PurpleCmdRet cmd_getreact(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **error, void *data) {
+	SlackAccount *sa = get_slack_account(conv->account);
+	if (!sa)
+		return PURPLE_CMD_RET_FAILED;
+
+	SlackObject *obj = slack_conversation_get_conversation(sa, conv);
+	if (!obj) {
+		return PURPLE_CMD_RET_FAILED;
+	}
+
+	slack_react_get_reactions(sa, obj, args[0]);
+
+	return PURPLE_CMD_RET_OK;
+}
+
+
 static PurpleCmdRet cmd_thread(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **error, void *data) {
 	SlackAccount *sa = get_slack_account(conv->account);
 	if (!sa)
@@ -191,6 +223,20 @@ void slack_cmd_register() {
 	id = purple_cmd_register("delete", "", PURPLE_CMD_P_PRPL, PURPLE_CMD_FLAG_IM | PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_PRPL_ONLY,
 			SLACK_PLUGIN_ID, cmd_delete, "delete: remove your last message", NULL);
 	commands = g_slist_prepend(commands, GUINT_TO_POINTER(id));
+
+	static const char *react_cmds[] = {"react", "re", NULL};
+	for (cmdp = react_cmds; *cmdp; cmdp++) {
+		id = purple_cmd_register(*cmdp, "s", PURPLE_CMD_P_PRPL, PURPLE_CMD_FLAG_IM | PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_PRPL_ONLY,
+			SLACK_PLUGIN_ID, cmd_react, "react|th [message-timestamp] [reaction]: post message in a react, where message-timestamp matches the configured display format", NULL);
+		commands = g_slist_prepend(commands, GUINT_TO_POINTER(id));
+	}
+
+	static const char *getreact_cmds[] = {"getreact", "gre", NULL};
+	for (cmdp = getreact_cmds; *cmdp; cmdp++) {
+		id = purple_cmd_register(*cmdp, "s", PURPLE_CMD_P_PRPL, PURPLE_CMD_FLAG_IM | PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_PRPL_ONLY,
+			SLACK_PLUGIN_ID, cmd_getreact, "getreact|gre [message-timestamp]: fetch reactions on a message, where message-timestamp matches the configured display format", NULL);
+		commands = g_slist_prepend(commands, GUINT_TO_POINTER(id));
+	}
 
 	static const char *thread_cmds[] = {"thread", "th", NULL};
 	for (cmdp = thread_cmds; *cmdp; cmdp++) {
